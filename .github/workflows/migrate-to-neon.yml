@@ -20,6 +20,7 @@ on:
 
 env:
   DATABASE_URL: ${{ secrets.XQ_RECORDS_DATABASE_URL }}
+  MIGRATION_DATABASE_URL: ${{ secrets.XQ_RECORDS_MIGRATION_DATABASE_URL }}
   DB_ADMIN_USER: ${{ secrets.XQ_RECORDS_DB_ADMIN_USER }}
   DB_ADMIN_PASSWORD: ${{ secrets.XQ_RECORDS_DB_ADMIN_PW }}
   APP_DB_USER: ${{ vars.XQ_RECORDS_APP_DB_USER || 'xq_records_app_user' }}
@@ -46,17 +47,21 @@ jobs:
           fi
           echo "XQ_RECORDS_DATABASE_URL is configured"
 
-          if [[ -z "${DB_ADMIN_USER}" ]]; then
-            echo "Missing required secret: XQ_RECORDS_DB_ADMIN_USER"
-            exit 1
-          fi
-          echo "XQ_RECORDS_DB_ADMIN_USER is configured"
+          case "${{ github.event.inputs.mode }}" in
+            create-user|grant-permissions|setup-app-user)
+              if [[ -z "${DB_ADMIN_USER}" ]]; then
+                echo "Missing required secret for selected mode: XQ_RECORDS_DB_ADMIN_USER"
+                exit 1
+              fi
+              echo "XQ_RECORDS_DB_ADMIN_USER is configured"
 
-          if [[ -z "${DB_ADMIN_PASSWORD}" ]]; then
-            echo "Missing required secret: XQ_RECORDS_DB_ADMIN_PW"
-            exit 1
-          fi
-          echo "XQ_RECORDS_DB_ADMIN_PW is configured"
+              if [[ -z "${DB_ADMIN_PASSWORD}" ]]; then
+                echo "Missing required secret for selected mode: XQ_RECORDS_DB_ADMIN_PW"
+                exit 1
+              fi
+              echo "XQ_RECORDS_DB_ADMIN_PW is configured"
+              ;;
+          esac
 
           case "${{ github.event.inputs.mode }}" in
             create-user|setup-app-user)
@@ -90,56 +95,12 @@ jobs:
         run: npm ci
 
       - name: Install PostgreSQL client
-        if: github.event.inputs.mode == 'create-user' || github.event.inputs.mode == 'grant-permissions' || github.event.inputs.mode == 'setup-app-user'
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Validate Prisma schema
-        if: github.event.inputs.mode == 'migrate'
-        run: npx prisma validate
-
-      - name: Deploy Prisma migrations
-        if: github.event.inputs.mode == 'migrate'
-        run: npx prisma migrate deploy
-
-      - name: Verify records tables
-        if: github.event.inputs.mode == 'migrate'
-        run: |
-          npx prisma db execute --stdin <<'SQL'
-          DO $$
-          DECLARE
-            table_count integer;
-          BEGIN
-            SELECT COUNT(*)
-            INTO table_count
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-              AND table_name IN ('object_types', 'objects', 'object_versions');
-
-            IF table_count <> 3 THEN
-              RAISE EXCEPTION 'Expected 3 xq-records tables, found %', table_count;
-            END IF;
-          END
-          $$;
-          SQL
-
-      - name: Create or update application user
-        if: github.event.inputs.mode == 'create-user' || github.event.inputs.mode == 'setup-app-user'
-        run: |
-          PGUSER="$DB_ADMIN_USER" PGPASSWORD="$DB_ADMIN_PASSWORD" psql "$DATABASE_URL" \
-            -v ON_ERROR_STOP=1 \
-            -v app_user="$APP_DB_USER" \
-            -v app_password="$APP_DB_PASSWORD" \
-            -f scripts/create-app-user-neon.sql
-
-      - name: Grant application permissions
-        if: github.event.inputs.mode == 'grant-permissions' || github.event.inputs.mode == 'setup-app-user'
-        run: |
-          PGUSER="$DB_ADMIN_USER" PGPASSWORD="$DB_ADMIN_PASSWORD" psql "$DATABASE_URL" \
-            -v ON_ERROR_STOP=1 \
-            -v app_user="$APP_DB_USER" \
-            -f scripts/grant-permissions-neon.sql
+      - name: Run deployment
+        run: bash scripts/migrate-to-neon.sh "${{ github.event.inputs.mode }}"
 
       - name: Migration summary
         if: success()

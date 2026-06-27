@@ -117,13 +117,18 @@ Required GitHub secrets/variables:
 
 ```text
 XQ_RECORDS_DATABASE_URL       # Neon connection string for xq-records
+XQ_RECORDS_MIGRATION_DATABASE_URL # optional direct Neon connection string for Prisma migrations
 XQ_RECORDS_DB_ADMIN_USER      # Neon admin/owner role used for psql setup steps
-XQ_RECORD_DB_ADMIN_PW         # Neon admin/owner password used for psql setup steps
+XQ_RECORDS_DB_ADMIN_PW        # Neon admin/owner password used for psql setup steps
 XQ_RECORDS_APP_DB_PASSWORD    # password for the restricted app role
 XQ_RECORDS_APP_DB_USER        # optional GitHub variable, defaults to xq_records_app_user
 ```
 
-Keep `XQ_RECORDS_APP_DB_PASSWORD` separate from `XQ_RECORD_DB_ADMIN_PW`.
+Use `XQ_RECORDS_DATABASE_URL` for the normal xq-records database connection.
+If that URL points at a Neon pooler endpoint, set
+`XQ_RECORDS_MIGRATION_DATABASE_URL` to the direct Neon endpoint so Prisma
+migrations do not depend on the pooler. Keep `XQ_RECORDS_APP_DB_PASSWORD`
+separate from `XQ_RECORDS_DB_ADMIN_PW`.
 The application role should not share the admin password.
 
 Manual workflow modes in `migrate-to-neon.yml`:
@@ -139,7 +144,7 @@ Local command shape:
 
 ```bash
 PGUSER="$XQ_RECORDS_DB_ADMIN_USER" \
-PGPASSWORD="$XQ_RECORD_DB_ADMIN_PW" \
+PGPASSWORD="$XQ_RECORDS_DB_ADMIN_PW" \
 psql "$XQ_RECORDS_DATABASE_URL" \
   -v ON_ERROR_STOP=1 \
   -v app_user="xq_records_app_user" \
@@ -147,7 +152,7 @@ psql "$XQ_RECORDS_DATABASE_URL" \
   -f scripts/create-app-user-neon.sql
 
 PGUSER="$XQ_RECORDS_DB_ADMIN_USER" \
-PGPASSWORD="$XQ_RECORD_DB_ADMIN_PW" \
+PGPASSWORD="$XQ_RECORDS_DB_ADMIN_PW" \
 psql "$XQ_RECORDS_DATABASE_URL" \
   -v ON_ERROR_STOP=1 \
   -v app_user="xq_records_app_user" \
