@@ -21,7 +21,7 @@ on:
 env:
   DATABASE_URL: ${{ secrets.XQ_RECORDS_DATABASE_URL }}
   DB_ADMIN_USER: ${{ secrets.XQ_RECORDS_DB_ADMIN_USER }}
-  DB_ADMIN_PASSWORD: ${{ secrets.XQ_RECORD_DB_ADMIN_PW }}
+  DB_ADMIN_PASSWORD: ${{ secrets.XQ_RECORDS_DB_ADMIN_PW }}
   APP_DB_USER: ${{ vars.XQ_RECORDS_APP_DB_USER || 'xq_records_app_user' }}
   APP_DB_PASSWORD: ${{ secrets.XQ_RECORDS_APP_DB_PASSWORD }}
 
@@ -53,10 +53,10 @@ jobs:
           echo "XQ_RECORDS_DB_ADMIN_USER is configured"
 
           if [[ -z "${DB_ADMIN_PASSWORD}" ]]; then
-            echo "Missing required secret: XQ_RECORD_DB_ADMIN_PW"
+            echo "Missing required secret: XQ_RECORDS_DB_ADMIN_PW"
             exit 1
           fi
-          echo "XQ_RECORD_DB_ADMIN_PW is configured"
+          echo "XQ_RECORDS_DB_ADMIN_PW is configured"
 
           case "${{ github.event.inputs.mode }}" in
             create-user|setup-app-user)
@@ -84,10 +84,9 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: xq-records/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: xq-records
         run: npm ci
 
       - name: Install PostgreSQL client
@@ -98,18 +97,16 @@ jobs:
 
       - name: Validate Prisma schema
         if: github.event.inputs.mode == 'migrate'
-        working-directory: xq-records
         run: npx prisma validate
 
       - name: Deploy Prisma migrations
         if: github.event.inputs.mode == 'migrate'
-        working-directory: xq-records
         run: npx prisma migrate deploy
 
       - name: Verify records tables
         if: github.event.inputs.mode == 'migrate'
         run: |
-          npm --prefix xq-records exec prisma -- db execute --stdin <<'SQL'
+          npx prisma db execute --stdin <<'SQL'
           DO $$
           DECLARE
             table_count integer;
@@ -129,7 +126,6 @@ jobs:
 
       - name: Create or update application user
         if: github.event.inputs.mode == 'create-user' || github.event.inputs.mode == 'setup-app-user'
-        working-directory: xq-records
         run: |
           PGUSER="$DB_ADMIN_USER" PGPASSWORD="$DB_ADMIN_PASSWORD" psql "$DATABASE_URL" \
             -v ON_ERROR_STOP=1 \
@@ -139,7 +135,6 @@ jobs:
 
       - name: Grant application permissions
         if: github.event.inputs.mode == 'grant-permissions' || github.event.inputs.mode == 'setup-app-user'
-        working-directory: xq-records
         run: |
           PGUSER="$DB_ADMIN_USER" PGPASSWORD="$DB_ADMIN_PASSWORD" psql "$DATABASE_URL" \
             -v ON_ERROR_STOP=1 \

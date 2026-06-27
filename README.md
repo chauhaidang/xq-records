@@ -235,3 +235,42 @@ npm run test:smoke
 ```
 
 Smoke tests expect the schema to already exist. Use the Docker image for local verification or run Prisma migrations against a disposable Neon branch.
+
+## CI/CD flow
+
+Production deploys run manually from GitHub Actions:
+`.github/workflows/migrate-to-neon.yml`.
+
+Trigger the workflow, choose a **mode**, and type `yes` in **confirm** before
+anything runs against Neon.
+
+```mermaid
+flowchart TD
+    A[workflow_dispatch] --> B[validate job]
+    B --> C{confirm == yes?}
+    C -->|no| X[fail]
+    C -->|yes| D{mode?}
+    D -->|migrate| E[prisma validate]
+    E --> F[prisma migrate deploy]
+    F --> G[verify object_types, objects, object_versions]
+    D -->|create-user| H[create-app-user-neon.sql]
+    D -->|grant-permissions| I[grant-permissions-neon.sql]
+    D -->|setup-app-user| H --> I
+```
+
+| Mode | What runs |
+| --- | --- |
+| `migrate` | Validate schema, apply Prisma migrations, verify the 3 core tables exist |
+| `create-user` | Create or update the restricted app role and set its password |
+| `grant-permissions` | Grant runtime DML permissions on `public` schema objects |
+| `setup-app-user` | `create-user` then `grant-permissions` |
+
+Typical sequence for a new Neon database:
+
+1. `migrate`
+2. `setup-app-user`
+
+For schema-only changes, run `migrate` alone. Run `grant-permissions` again if
+new tables were added and the app role needs updated grants.
+
+Required GitHub configuration is listed in [Application User](#application-user).
