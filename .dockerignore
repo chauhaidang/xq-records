@@ -1,0 +1,15 @@
+node_modules
+generated
+dist
+coverage
+.env
+.env.*
+*.env
+README.md
+tests
+prisma
+scripts
+package*.json
+tsconfig.json
+jest.config.js
+prisma.config.ts

@@ -1,0 +1,52 @@
+generator client {
+  provider               = "prisma-client"
+  output                 = "../generated/prisma"
+  moduleFormat           = "cjs"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model DatabaseObject {
+  id              String                @id @default(cuid())
+  sourceSchema    String                @map("source_schema") @db.VarChar(100)
+  objectName      String                @map("object_name") @db.VarChar(200)
+  objectType      String                @map("object_type") @db.VarChar(50)
+  displayName     String?               @map("display_name") @db.VarChar(200)
+  description     String?
+  lifecycleStatus String                @default("active") @map("lifecycle_status") @db.VarChar(50)
+  ownerName       String?               @map("owner_name") @db.VarChar(200)
+  tags            String[]              @default([])
+  version         Int                   @default(1)
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+  fields          DatabaseObjectField[]
+
+  @@unique([sourceSchema, objectName, objectType], map: "database_objects_identity_unique")
+  @@index([sourceSchema], map: "idx_database_objects_source_schema")
+  @@index([objectType], map: "idx_database_objects_object_type")
+  @@index([lifecycleStatus], map: "idx_database_objects_lifecycle_status")
+  @@index([sourceSchema, objectName], map: "idx_database_objects_source_name")
+  @@map("database_objects")
+}
+
+model DatabaseObjectField {
+  id               String         @id @default(cuid())
+  databaseObjectId String         @map("database_object_id")
+  fieldName        String         @map("field_name") @db.VarChar(200)
+  ordinalPosition  Int            @map("ordinal_position")
+  dataType         String         @map("data_type") @db.VarChar(200)
+  isNullable       Boolean        @default(true) @map("is_nullable")
+  description      String?
+  tags             String[]       @default([])
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  databaseObject   DatabaseObject @relation(fields: [databaseObjectId], references: [id], onDelete: Cascade)
+
+  @@unique([databaseObjectId, fieldName], map: "database_object_fields_name_unique")
+  @@unique([databaseObjectId, ordinalPosition], map: "database_object_fields_position_unique")
+  @@index([databaseObjectId], map: "idx_database_object_fields_object_id")
+  @@map("database_object_fields")
+}

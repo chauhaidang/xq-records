@@ -1,0 +1,45 @@
+{
+  "name": "xq-records",
+  "version": "1.0.0",
+  "description": "Prisma-owned database schema, migrations, Docker image, and smoke tests for the XQ Records Neon database.",
+  "main": "index.js",
+  "scripts": {
+    "prisma:validate": "prisma validate",
+    "prisma:generate": "prisma generate",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:status": "prisma migrate status",
+    "docker:prepare": "./scripts/prepare-docker-init.sh",
+    "docker:build": "./scripts/build-docker.sh",
+    "test": "jest --forceExit",
+    "test:smoke": "jest --forceExit tests/smoke.test.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chauhaidang/xq-records-db.git"
+  },
+  "keywords": [
+    "postgres",
+    "neon",
+    "prisma",
+    "xq-records"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@prisma/adapter-pg": "^7.4.0",
+    "@swc/core": "^1.15.11",
+    "@swc/jest": "^0.2.39",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.2.3",
+    "dotenv": "^17.3.1",
+    "jest": "^30.2.0",
+    "prisma": "^7.4.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.4.0",
+    "pg": "^8.18.0"
+  }
+}

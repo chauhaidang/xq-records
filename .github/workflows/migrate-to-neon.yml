@@ -1,0 +1,90 @@
+name: Migrate XQ Records Database to Neon
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "yes" to confirm deployment to the xq-records Neon database'
+        required: true
+        type: string
+
+env:
+  DATABASE_URL: ${{ secrets.XQ_RECORDS_DATABASE_URL }}
+
+jobs:
+  validate:
+    name: Validate Migration Request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation
+        run: |
+          if [[ "${{ github.event.inputs.confirm }}" != "yes" ]]; then
+            echo "Migration not confirmed. Type 'yes' in the confirm field."
+            exit 1
+          fi
+          echo "Migration confirmed"
+
+      - name: Check secret
+        run: |
+          if [[ -z "${DATABASE_URL}" ]]; then
+            echo "Missing required secret: XQ_RECORDS_DATABASE_URL"
+            exit 1
+          fi
+          echo "XQ_RECORDS_DATABASE_URL is configured"
+
+  migrate:
+    name: Run Prisma Migrate Deploy
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: xq-records/package-lock.json
+
+      - name: Install dependencies
+        working-directory: xq-records
+        run: npm ci
+
+      - name: Validate Prisma schema
+        working-directory: xq-records
+        run: npx prisma validate
+
+      - name: Deploy Prisma migrations
+        working-directory: xq-records
+        run: npx prisma migrate deploy
+
+      - name: Verify records tables
+        run: |
+          npm --prefix xq-records exec prisma -- db execute --stdin <<'SQL'
+          DO $$
+          DECLARE
+            table_count integer;
+          BEGIN
+            SELECT COUNT(*)
+            INTO table_count
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name IN ('database_objects', 'database_object_fields');
+
+            IF table_count <> 2 THEN
+              RAISE EXCEPTION 'Expected 2 xq-records tables, found %', table_count;
+            END IF;
+          END
+          $$;
+          SQL
+
+      - name: Migration summary
+        if: success()
+        run: |
+          echo "XQ Records migration completed successfully"
+          echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Triggered by: ${{ github.actor }}"
