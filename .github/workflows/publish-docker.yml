@@ -6,7 +6,11 @@ on:
       - main
       - master
     paths:
-      - 'xq-records/**'
+      - 'Dockerfile'
+      - 'prisma/**'
+      - 'scripts/**'
+      - 'package*.json'
+      - '.github/workflows/publish-docker.yml'
   workflow_dispatch:
 
 env:
@@ -39,13 +43,12 @@ jobs:
         run: echo "short_hash=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Prepare Docker init SQL
-        working-directory: xq-records
         run: ./scripts/prepare-docker-init.sh
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: xq-records
+          context: .
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.git.outputs.short_hash }}
