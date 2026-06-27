@@ -1,0 +1,10 @@
+image: xq-records-db
+tag: latest
+ports:
+  - "5432:5432"
+environment:
+  POSTGRES_DB: xq-records
+  POSTGRES_USER: xq_records_user
+  POSTGRES_PASSWORD: xq_records_password
+  POSTGRES_APP_USER: xq_records_app_user
+  POSTGRES_APP_PASSWORD: xq_records_app_password

@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MIGRATIONS_DIR="$PROJECT_DIR/prisma/migrations"
 DOCKER_INIT_DIR="$PROJECT_DIR/docker-init"
-OUTPUT_FILE="$DOCKER_INIT_DIR/01-prisma-migrations.sql"
+MIGRATIONS_OUTPUT="$DOCKER_INIT_DIR/01-prisma-migrations.sql"
+SETUP_APP_USER_SCRIPT="$DOCKER_INIT_DIR/02-setup-app-user.sh"
 
 mkdir -p "$DOCKER_INIT_DIR"
 
@@ -22,6 +23,34 @@ mkdir -p "$DOCKER_INIT_DIR"
     echo "-- <<< END Prisma migration: $migration_name"
     echo
   done
-} > "$OUTPUT_FILE"
+} > "$MIGRATIONS_OUTPUT"
 
-echo "Prepared Docker init SQL: $OUTPUT_FILE"
+cp "$SCRIPT_DIR/create-app-user-neon.sql" "$DOCKER_INIT_DIR/create-app-user-neon.sql"
+cp "$SCRIPT_DIR/grant-permissions-neon.sql" "$DOCKER_INIT_DIR/grant-permissions-neon.sql"
+
+cat > "$SETUP_APP_USER_SCRIPT" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+init_dir="/docker-entrypoint-initdb.d"
+app_user="${POSTGRES_APP_USER:-xq_records_app_user}"
+app_password="${POSTGRES_APP_PASSWORD:-xq_records_app_password}"
+
+psql -v ON_ERROR_STOP=1 \
+  --username "$POSTGRES_USER" \
+  --dbname "$POSTGRES_DB" \
+  -v app_user="$app_user" \
+  -v app_password="$app_password" \
+  -f "$init_dir/create-app-user-neon.sql"
+
+psql -v ON_ERROR_STOP=1 \
+  --username "$POSTGRES_USER" \
+  --dbname "$POSTGRES_DB" \
+  -v app_user="$app_user" \
+  -f "$init_dir/grant-permissions-neon.sql"
+EOF
+
+chmod +x "$SETUP_APP_USER_SCRIPT"
+
+echo "Prepared Docker init SQL: $MIGRATIONS_OUTPUT"
+echo "Prepared Docker app user setup: $SETUP_APP_USER_SCRIPT"

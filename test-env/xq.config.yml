@@ -1,0 +1,6 @@
+portRange:
+  start: 8101
+
+dependencies:
+  database:
+    - xq-records-db

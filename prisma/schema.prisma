@@ -9,44 +9,55 @@ datasource db {
   provider = "postgresql"
 }
 
-model DatabaseObject {
-  id              String                @id @default(cuid())
-  sourceSchema    String                @map("source_schema") @db.VarChar(100)
-  objectName      String                @map("object_name") @db.VarChar(200)
-  objectType      String                @map("object_type") @db.VarChar(50)
-  displayName     String?               @map("display_name") @db.VarChar(200)
-  description     String?
-  lifecycleStatus String                @default("active") @map("lifecycle_status") @db.VarChar(50)
-  ownerName       String?               @map("owner_name") @db.VarChar(200)
-  tags            String[]              @default([])
-  version         Int                   @default(1)
-  createdAt       DateTime              @default(now()) @map("created_at")
-  updatedAt       DateTime              @updatedAt @map("updated_at")
-  fields          DatabaseObjectField[]
+model ObjectType {
+  id          String   @id @default(cuid())
+  name        String   @unique @db.VarChar(100)
+  displayName String?  @map("display_name") @db.VarChar(200)
+  description String?
+  schemaJson  Json?    @map("schema_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  objects     Object[]
 
-  @@unique([sourceSchema, objectName, objectType], map: "database_objects_identity_unique")
-  @@index([sourceSchema], map: "idx_database_objects_source_schema")
-  @@index([objectType], map: "idx_database_objects_object_type")
-  @@index([lifecycleStatus], map: "idx_database_objects_lifecycle_status")
-  @@index([sourceSchema, objectName], map: "idx_database_objects_source_name")
-  @@map("database_objects")
+  @@index([name], map: "idx_object_types_name")
+  @@map("object_types")
 }
 
-model DatabaseObjectField {
-  id               String         @id @default(cuid())
-  databaseObjectId String         @map("database_object_id")
-  fieldName        String         @map("field_name") @db.VarChar(200)
-  ordinalPosition  Int            @map("ordinal_position")
-  dataType         String         @map("data_type") @db.VarChar(200)
-  isNullable       Boolean        @default(true) @map("is_nullable")
-  description      String?
-  tags             String[]       @default([])
-  createdAt        DateTime       @default(now()) @map("created_at")
-  updatedAt        DateTime       @updatedAt @map("updated_at")
-  databaseObject   DatabaseObject @relation(fields: [databaseObjectId], references: [id], onDelete: Cascade)
+model Object {
+  id               String          @id @default(cuid())
+  objectTypeId     String          @map("object_type_id")
+  externalKey      String          @map("external_key") @db.VarChar(200)
+  originSource     String          @map("origin_source") @db.VarChar(200)
+  status           String          @default("active") @db.VarChar(50)
+  currentVersionId String?         @unique @map("current_version_id")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+  objectType       ObjectType      @relation(fields: [objectTypeId], references: [id], onDelete: Restrict)
+  currentVersion   ObjectVersion?  @relation("CurrentObjectVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions         ObjectVersion[] @relation("ObjectVersions")
 
-  @@unique([databaseObjectId, fieldName], map: "database_object_fields_name_unique")
-  @@unique([databaseObjectId, ordinalPosition], map: "database_object_fields_position_unique")
-  @@index([databaseObjectId], map: "idx_database_object_fields_object_id")
-  @@map("database_object_fields")
+  @@unique([objectTypeId, originSource, externalKey], map: "objects_identity_unique")
+  @@index([objectTypeId], map: "idx_objects_object_type_id")
+  @@index([originSource], map: "idx_objects_origin_source")
+  @@index([status], map: "idx_objects_status")
+  @@index([externalKey], map: "idx_objects_external_key")
+  @@map("objects")
+}
+
+model ObjectVersion {
+  id           String    @id @default(cuid())
+  objectId     String    @map("object_id")
+  version      Int
+  data         Json
+  changeReason String?   @map("change_reason")
+  validFrom    DateTime  @default(now()) @map("valid_from")
+  validTo      DateTime? @map("valid_to")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  object       Object    @relation("ObjectVersions", fields: [objectId], references: [id], onDelete: Cascade)
+  currentFor   Object?   @relation("CurrentObjectVersion")
+
+  @@unique([objectId, version], map: "object_versions_object_version_unique")
+  @@index([objectId], map: "idx_object_versions_object_id")
+  @@index([validFrom], map: "idx_object_versions_valid_from")
+  @@map("object_versions")
 }

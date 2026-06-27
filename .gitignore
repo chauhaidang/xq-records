@@ -1,5 +1,7 @@
 .DS_Store
 .idea
+nginx-gateway.conf
+xq-compose.yml
 
 # Environment files with credentials
 .env

@@ -32,8 +32,9 @@ describe("XQ Records table structure", () => {
     `;
     const tableNames = tables.map((table) => table.table_name);
 
-    expect(tableNames).toContain("database_objects");
-    expect(tableNames).toContain("database_object_fields");
+    expect(tableNames).toContain("object_types");
+    expect(tableNames).toContain("objects");
+    expect(tableNames).toContain("object_versions");
   });
 
   it("has the expected indexes and constraints", async () => {
@@ -41,17 +42,17 @@ describe("XQ Records table structure", () => {
       SELECT indexname
       FROM pg_indexes
       WHERE schemaname = 'public'
-        AND tablename IN ('database_objects', 'database_object_fields')
+        AND tablename IN ('object_types', 'objects', 'object_versions')
     `;
     const indexNames = indexes.map((index) => index.indexname);
 
-    expect(indexNames).toContain("database_objects_identity_unique");
-    expect(indexNames).toContain("database_object_fields_name_unique");
-    expect(indexNames).toContain("database_object_fields_position_unique");
-    expect(indexNames).toContain("idx_database_object_fields_object_id");
+    expect(indexNames).toContain("object_types_name_key");
+    expect(indexNames).toContain("objects_identity_unique");
+    expect(indexNames).toContain("idx_objects_origin_source");
+    expect(indexNames).toContain("object_versions_object_version_unique");
   });
 
-  it("has a cascade foreign key from fields to objects", async () => {
+  it("has cascade history and restricted type foreign keys", async () => {
     const constraints: {
       constraint_name: string;
       delete_rule: string;
@@ -60,110 +61,180 @@ describe("XQ Records table structure", () => {
       SELECT rc.constraint_name, rc.delete_rule, rc.update_rule
       FROM information_schema.referential_constraints rc
       WHERE rc.constraint_schema = 'public'
-        AND rc.constraint_name = 'database_object_fields_database_object_id_fkey'
+        AND rc.constraint_name IN (
+          'objects_object_type_id_fkey',
+          'object_versions_object_id_fkey',
+          'objects_current_version_id_fkey'
+        )
+      ORDER BY rc.constraint_name
     `;
 
-    expect(constraints).toHaveLength(1);
-    expect(constraints[0].delete_rule).toBe("CASCADE");
-    expect(constraints[0].update_rule).toBe("CASCADE");
+    expect(constraints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          constraint_name: "objects_object_type_id_fkey",
+          delete_rule: "RESTRICT",
+        }),
+        expect.objectContaining({
+          constraint_name: "object_versions_object_id_fkey",
+          delete_rule: "CASCADE",
+        }),
+        expect.objectContaining({
+          constraint_name: "objects_current_version_id_fkey",
+          delete_rule: "SET NULL",
+        }),
+      ])
+    );
   });
 });
 
-describe("XQ Records metadata behavior", () => {
-  const sourceSchema = `smoke_${Date.now()}`;
+describe("XQ Records abstract object behavior", () => {
+  const typeNamePrefix = `smoke_${Date.now()}`;
 
   afterEach(async () => {
-    await prisma.databaseObject.deleteMany({
-      where: { sourceSchema },
+    const smokeTypes = await prisma.objectType.findMany({
+      where: { name: { startsWith: typeNamePrefix } },
+      select: { id: true },
+    });
+    const smokeTypeIds = smokeTypes.map((type) => type.id);
+
+    if (smokeTypeIds.length > 0) {
+      await prisma.object.deleteMany({
+        where: { objectTypeId: { in: smokeTypeIds } },
+      });
+    }
+
+    await prisma.objectType.deleteMany({
+      where: { name: { startsWith: typeNamePrefix } },
     });
   });
 
-  it("creates, reads, and deletes database object metadata with fields", async () => {
-    const created = await prisma.databaseObject.create({
+  it("creates an object type, object with origin source, and version history", async () => {
+    const typeName = `${typeNamePrefix}_history`;
+    const objectType = await prisma.objectType.create({
       data: {
-        sourceSchema,
-        objectName: "customer_records",
-        objectType: "table",
-        displayName: "Customer Records",
-        lifecycleStatus: "active",
-        ownerName: "records-team",
-        tags: ["source", "customer"],
-        fields: {
+        name: typeName,
+        displayName: "Smoke Object",
+        schemaJson: {
+          required: ["name"],
+          properties: {
+            name: { type: "string" },
+          },
+        },
+      },
+    });
+
+    const object = await prisma.object.create({
+      data: {
+        objectTypeId: objectType.id,
+        externalKey: "bench_press",
+        originSource: "xq_fitness.exercises",
+        versions: {
           create: [
             {
-              fieldName: "id",
-              ordinalPosition: 1,
-              dataType: "text",
-              isNullable: false,
-            },
-            {
-              fieldName: "email",
-              ordinalPosition: 2,
-              dataType: "text",
-              isNullable: true,
+              version: 1,
+              data: {
+                name: "Bench Press",
+                muscleGroup: "Chest",
+              },
+              changeReason: "initial import",
             },
           ],
         },
       },
-      include: { fields: true },
+      include: { versions: true },
     });
 
-    expect(created.fields).toHaveLength(2);
+    expect(object.originSource).toBe("xq_fitness.exercises");
+    expect(object.versions).toHaveLength(1);
+    expect(object.versions[0].version).toBe(1);
 
-    const readBack = await prisma.databaseObject.findUnique({
-      where: { id: created.id },
-      include: { fields: true },
+    await prisma.object.update({
+      where: { id: object.id },
+      data: { currentVersionId: object.versions[0].id },
     });
 
-    expect(readBack?.objectName).toBe("customer_records");
-    expect(readBack?.fields.map((field) => field.fieldName).sort()).toEqual([
-      "email",
-      "id",
-    ]);
-
-    await prisma.databaseObject.delete({ where: { id: created.id } });
-
-    const remainingFields = await prisma.databaseObjectField.count({
-      where: { databaseObjectId: created.id },
-    });
-    expect(remainingFields).toBe(0);
-  });
-
-  it("rejects duplicate database object identity", async () => {
-    const data = {
-      sourceSchema,
-      objectName: "orders",
-      objectType: "table",
-      lifecycleStatus: "active",
-    };
-
-    await prisma.databaseObject.create({ data });
-
-    await expect(prisma.databaseObject.create({ data })).rejects.toThrow();
-  });
-
-  it("rejects duplicate field names per database object", async () => {
-    const object = await prisma.databaseObject.create({
-      data: {
-        sourceSchema,
-        objectName: "products",
-        objectType: "table",
+    const readBack = await prisma.object.findUnique({
+      where: { id: object.id },
+      include: {
+        objectType: true,
+        currentVersion: true,
+        versions: true,
       },
     });
 
+    expect(readBack?.objectType.name).toBe(typeName);
+    expect(readBack?.currentVersion?.version).toBe(1);
+    expect(readBack?.versions).toHaveLength(1);
+  });
+
+  it("rejects duplicate object identity within type, origin source, and external key", async () => {
+    const typeName = `${typeNamePrefix}_duplicate_identity`;
+    const objectType = await prisma.objectType.create({
+      data: { name: typeName },
+    });
+
     const data = {
-      databaseObjectId: object.id,
-      fieldName: "sku",
-      ordinalPosition: 1,
-      dataType: "text",
+      objectTypeId: objectType.id,
+      externalKey: "order-123",
+      originSource: "commerce.orders",
     };
 
-    await prisma.databaseObjectField.create({ data });
+    await prisma.object.create({ data });
 
-    await expect(
-      prisma.databaseObjectField.create({
-        data: { ...data, ordinalPosition: 2 },
-      })
-    ).rejects.toThrow();
+    await expect(prisma.object.create({ data })).rejects.toThrow();
+  });
+
+  it("allows the same external key from a different origin source", async () => {
+    const typeName = `${typeNamePrefix}_origin_source`;
+    const objectType = await prisma.objectType.create({
+      data: { name: typeName },
+    });
+
+    await prisma.object.create({
+      data: {
+        objectTypeId: objectType.id,
+        externalKey: "asset-123",
+        originSource: "finance.assets",
+      },
+    });
+
+    const second = await prisma.object.create({
+      data: {
+        objectTypeId: objectType.id,
+        externalKey: "asset-123",
+        originSource: "inventory.assets",
+      },
+    });
+
+    expect(second.originSource).toBe("inventory.assets");
+  });
+
+  it("deletes version history when an object is deleted", async () => {
+    const typeName = `${typeNamePrefix}_cascade_history`;
+    const objectType = await prisma.objectType.create({
+      data: { name: typeName },
+    });
+    const object = await prisma.object.create({
+      data: {
+        objectTypeId: objectType.id,
+        externalKey: "routine-a",
+        originSource: "xq_fitness.workout_routines",
+        versions: {
+          create: [
+            { version: 1, data: { name: "Routine A" } },
+            { version: 2, data: { name: "Routine A Updated" } },
+          ],
+        },
+      },
+      include: { versions: true },
+    });
+
+    await prisma.object.delete({ where: { id: object.id } });
+
+    const remainingVersions = await prisma.objectVersion.count({
+      where: { objectId: object.id },
+    });
+    expect(remainingVersions).toBe(0);
   });
 });
